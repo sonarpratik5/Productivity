@@ -1,0 +1,58 @@
+Productivity development context
+Updated: 2026-08-10
+
+Product intent
+- Native macOS, privacy-first personal productivity tracker.
+- Flagship concept is multistream activity tracking: the app should preserve simultaneous streams of activity instead of flattening the day into one app-at-a-time timeline. Example: coding in Xcode while Spotify or Safari audio is active, or multiple meaningful visible windows are part of the work context.
+- Data should stay local. The app currently uses file-backed local storage under Application Support, plus UserDefaults for some preferences/manual event metadata.
+
+Important architecture
+- App/AppEnvironment.swift wires dependencies: MacOSActivityTracker, InsightEngine, FileBackedActivityRepository, AppSettings, PomodoroViewModel. It also records lifecycle segments for app open/close and system sleep/wake.
+- Core/Models/ActivitySegment.swift is the central normalized data model. Every tracked stream becomes an ActivitySegment with app, bundle id, title, optional userDescription, date interval, category, and productivityScore.
+- Core/Services/ActivityTracking/MacOSActivityTracker.swift is the live macOS tracker. It tracks:
+  - primary/frontmost app sessions,
+  - background companion sessions, mainly active audio apps where available on macOS 15+ with fallback allowlisted media apps,
+  - visible companion sessions for recently active meaningful windows that remain visible and above area thresholds,
+  - lifecycle interruptions like sleep/session resign through AppEnvironment.
+- Core/Persistence/ActivityRepository.swift stores segments locally. FileBackedActivityRepository upserts by UUID into daily binary property-list files and protects writes with a length-prefixed WAL file, then flushes dirty days on a 30 second debounce and lifecycle events.
+- Core/Services/Classification/ActivityClassifier.swift maps apps/rules to ActivityCategory and productivityScore. Manual label rules can override defaults.
+- Core/Services/Insights/InsightEngine.swift computes daily overview from primary/planned context-aware segments.
+
+Multistream algorithm notes
+- ActivitySegment marks companion streams by userDescription containing "Background companion activity" or "Visible companion activity".
+- ActivitySegment.primaryAttentionSegments(from:) filters out companion and lifecycle streams, sorts by start time, resolves same-start conflicts by productivityScore, and trims each primary segment to end at the next primary start.
+- TimelineStream.packed(from:) builds timeline lanes:
+  - lane 1: normalized primary attention,
+  - next lane: lifecycle segments,
+  - additional lanes: companion segments after coalescing by bundle id, subtracting overlaps with the same app already represented as primary, and packing non-overlapping segments into compact lanes.
+- TimelineLabelSegment.derived(from:) turns primary + companion context into productive/unproductive/unknown label intervals. If only companion streams are active, it currently marks that interval unproductive; when primary streams exist, dominant label is derived from primary segments.
+- InsightEngine.dailyOverview intentionally uses primary/planned context-aware time rather than counting all companion streams, avoiding double-counting simultaneous activities.
+
+Dashboard and insights flow
+- DashboardViewModel receives live snapshots from ActivityTracking.activitySegments, filters deleted IDs, refreshes views, then persists live segments.
+- It merges persisted + live segments by UUID, keeping the latest endDate.
+- ManualActivityEvent creates synthetic ActivitySegment values with bundle id prefix manual.event.; these can override tracked time in InsightEngine by subtracting planned intervals from tracked segments.
+- WeeklyInsightsView currently takes weekSegments and labelSegments, derives label segments when needed, supports week/month/year periods, clamps to the selected period, and shows breakdown, history, and InsightStripView summaries.
+
+Development log
+- 2026-08-10: First context pass. Read architecture, core models, live tracker, persistence, classifier, insight engine, dashboard view model, manual events, and current WeeklyInsightsView. No behavior or UI code changed yet.
+- 2026-08-10: Reviewed ActivitySegment multistream normalization algorithm and direct consumers. No code change made; current behavior is coherent and low-risk. Potential future typed stream-kind refinement was intentionally skipped because it would affect persistence/schema and saved segment interpretation.
+- 2026-08-10: Added manual event presets in TimelineEditorView, including Sleep as a daily overnight default from 11:00 PM to 7:00 AM. Added tracking display preference tracking.timeline.isSleepHiddenInDayProgress, defaulting on, exposed in Settings > Tracking. Day Progress now compresses its visual scale around manual events titled Sleep when the preference is enabled, while keeping sleep events saved and visible in event history. No persistence schema change.
+- 2026-08-10: Refined hidden-sleep Day Progress display to keep small moon boundary markers at the folded sleep start/end points, so sleep remains visible without occupying progress width.
+- 2026-08-10: Sleep preset now defaults to Productive, and hidden-sleep moon boundary markers use the Productive green tint.
+- 2026-08-10: Removed the moon icon from hidden-sleep Day Progress markers. Markers are now compact high-opacity productive-green blocks with green borders. Sleep preset now defaults to 10:45 PM through 6:45 AM.
+- 2026-08-10: Adjusted hidden-sleep markers to match the manual custom-event visual language more closely: short 8pt rounded productive-green blocks with strong green borders, no icon.
+- 2026-08-10: Updated hidden-sleep Day Progress markers to match requested reference: slim cyan leading line plus a small transparent productive-green rounded outline block.
+- 2026-08-10: Reverted hidden-sleep markers back to the existing Day Progress manual-event style for consistency: 8pt rounded productive-green block, opacity 0.22 fill, productive border opacity 0.98 line width 1.8, no custom cyan or separate glow. Hover shows a Sleep label.
+- 2026-08-10: Fixed hidden-sleep marker hover label positioning. Edge markers now anchor their Sleep tooltip at the corresponding left/right corner instead of drifting toward the center.
+- 2026-08-10: Tightened Waking/Day Progress hover behavior. Sleep marker hover now clears normal segment hover and takes priority; normal segment labels are suppressed while a sleep marker is active; progress/current-time overlays ignore hit testing; hover state clears when leaving the track, changing sleep visibility mode, or changing segment IDs.
+- 2026-08-10: Refactored TimelineDayProgressView to isolate Waking Progress render/hover targets from raw Day Progress segments. It now builds DayProgressDisplaySegment values after subtracting hidden sleep intervals, and hover state stores a DayProgressHoverItem rather than a raw segment ID plus separate marker state. This prevents hidden/full-day counterpart events from participating in Waking Progress hover. Verified with RunCodeSnippet that daily Sleep creates 00:00-06:45 and 22:45-00:00 productive segments; project builds.
+- 2026-08-10: Fixed actual Waking Progress sleep-marker root cause: overnight sleep clipping produced duplicate folded markers at the same left/right edge (day boundary marker plus real sleep boundary marker). sleepBoundaryMarkers now emits only real folded boundaries: sleep ending at 6:45 as leading marker and sleep starting at 22:45 as trailing marker, with dedupe by rendered position/title. Verified snippet output: markers [("06:45", "leading"), ("22:45", "trailing")].
+
+Working rules for future changes
+- Keep changes scoped to the requested feature/refinement.
+- Preserve local-first storage unless explicitly changing persistence strategy.
+- Do not collapse multistream data into one stream for UI or insights unless the specific metric requires primary-attention-only time.
+- When changing insights, decide explicitly whether the metric should use primary attention only, companion streams, lifecycle streams, manual planned events, or a derived label timeline.
+- Use SwiftUI/Observation patterns already present. Avoid Combine.
+- Validate Swift changes with Xcode diagnostics or BuildProject when feasible.

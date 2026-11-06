@@ -1,0 +1,275 @@
+Productivity app handoff
+
+What this app is
+- macOS SwiftUI app for local personal productivity tracking.
+- It captures foreground app usage, meaningful visible companion windows, background audio/media activity, manual planned events, and lifecycle sleep gaps.
+- It turns those inputs into activity segments, timeline label overlays, dashboard metrics, weekly/monthly/yearly insights, analytics, calendar goal progress, milestones, and Pomodoro state.
+- Main app shell is `DashboardView`, mounted by `ContentView` inside a hidden-title-bar `WindowGroup`.
+- Data stays local. The app does not record the screen, store screenshots, or upload activity data.
+
+Current navigation
+- Sidebar routes are defined by `DashboardRoute`:
+  - Today: daily quote, header metrics, insight cards, timeline editor, active goals, milestones, and recent audit.
+  - Insights: week/month/year reflection view from label segments plus goal progress rollups.
+  - Analytics: last 14/30/90-day style analytics from metric segments.
+  - Board: consistency calendar with pins, markers, custom goal markers, weekly/monthly goals, and progress cards.
+  - Pomodoro: focus timer configuration/control/history.
+  - Settings: general, privacy, tracking, Pomodoro, labeling, and account pages.
+- `ProductivityApp` also provides a `MenuBarExtra` with tracking status, daily metrics, Pomodoro controls, Open Dashboard, and Quit.
+- Window reopening is coordinated through `ProductivityWindowPresenter`, `DashboardWindowAccessor`, and `DashboardOpenWindowBridge` so the menu bar and dock reopen/present the same dashboard window where possible.
+
+Project map
+- `Productivity/ProductivityApp.swift`: app entry, app delegate, main window, menu bar extra, window presentation bridge, tracking reconciliation tasks.
+- `Productivity/ContentView.swift`: mounts `DashboardView` and hides toolbar/title presentation.
+- `Productivity/App/AppEnvironment.swift`: dependency container. Wires tracker, repositories, calendar board store, settings, Pomodoro, dashboard view model, lifecycle persistence, backup/restore, clear-data flow.
+- `Productivity/App/AppSettings.swift`: app appearance/text/theme settings, tracking tuning defaults, Pomodoro sound enum/player, procedural WAV renderer.
+- `Productivity/App/Architecture.md`: high-level architecture notes and storage algorithm.
+- `Productivity/Core/Models/ActivitySegment.swift`: core tracked unit and lifecycle/sleep helpers.
+- `Productivity/Core/Models/TimelineModels.swift`: timeline lane packing, label segment normalization, derived labels.
+- `Productivity/Core/Models/ManualActivityEvent.swift`: planned/manual events, recurrence, notification scheduling helpers.
+- `Productivity/Core/Models/AppLabelRule.swift`: per-app rules, custom labels, tracking modes, installed app scanning.
+- `Productivity/Core/Persistence/ActivityRepository.swift`: SQLite-backed activity and timeline-label storage, plus legacy file-backed migration support.
+- `Productivity/Core/Services/ActivityTracking/MacOSActivityTracker.swift`: live macOS capture.
+- `Productivity/Core/Services/Classification/ActivityClassifier.swift`: rule-based labels/categories/productivity scores.
+- `Productivity/Core/Services/Insights/InsightEngine.swift`: daily overview and insight summaries.
+- `Productivity/Core/Services/Insights/AdvancedAnalyticsEngine.swift`: analytics snapshot computation.
+- `Productivity/Core/Utilities/ActivityCSVExporter.swift`: CSV export.
+- `Productivity/Core/Utilities/ProductivityBackupDocument.swift`: JSON backup/restore snapshot schema.
+- `Productivity/Features/Dashboard/DashboardViewModel.swift`: main state hub for persisted/live/manual/edited activity.
+- `Productivity/Features/Dashboard/DashboardView.swift`: main split-view shell and Today composition.
+- `Productivity/Features/Dashboard/DailyQuoteHeaderView.swift`: daily rotating or custom focus quote.
+- `Productivity/Features/Dashboard/MilestonesView.swift`: streak, max focus session, Pomodoro cycles, completed goals, top productive app.
+- `Productivity/Features/Timeline/TimelineEditorView.swift`: timeline UI, manual event editing, label editing, hover/clip interactions.
+- `Productivity/Features/Timeline/ActivityStreamListView.swift`: recent audit list and delete flow.
+- `Productivity/Features/Week/WeeklyInsightsView.swift`: week/month/year insight views from labels and goals.
+- `Productivity/Features/Insights/AnalyticsView.swift`: cached analytics UI with Charts.
+- `Productivity/Features/Calendar/EmojiCalendarView.swift`: consistency board, pins, markers, goal CRUD, `CalendarBoardStore`.
+- `Productivity/Features/Calendar/GoalSummaryViews.swift`: reusable today/insight goal summary panels.
+- `Productivity/Features/Pomodoro/PomodoroViewModel.swift`: Pomodoro state machine, persisted config/history, sounds.
+- `Productivity/Features/Pomodoro/PomodoroView.swift`: full Pomodoro page.
+- `Productivity/Features/Pomodoro/PomodoroMenuBarView.swift`: menu-bar-oriented Pomodoro UI components.
+- `Productivity/Features/Settings/SettingsView.swift`: user preferences, launch at login, privacy/local data, backup/restore, labeling, account reset.
+- `Productivity/Shared/UI/ProductivityTheme.swift`: themes, responsive content widths, text scaling, typography, card/panel helpers, fullscreen environment.
+
+Core data model
+- `ActivitySegment`
+  - `id`, `appName`, optional `bundleIdentifier`, `title`, optional `userDescription`
+  - `startDate`, `endDate`, `category`, `label`, `productivityScore`
+  - special lifecycle/sleep labels are excluded from attention metrics where appropriate
+- `TimelineLabelSegment`
+  - user-edited or derived label interval
+  - `startDate`, `endDate`, `label`, `colorHex`, `source`
+  - normalized before storage/use so intervals are deterministic and non-overlapping
+- `ManualActivityEvent`
+  - planned/manual block, optional sleep flag, recurrence, alert, weekday mask
+  - produces `ActivitySegment` values inside requested intervals and schedules local notifications
+- `AppLabelRule`
+  - per-app label/category/productivity override
+  - supports all-app tracking and manual allowlist tracking modes
+- `CalendarActivityGoal`
+  - persisted goal with `name`, marker ID, optional custom symbol, target count, weekly/monthly period
+- `CalendarBoardStore`
+  - observable store for calendar goals and per-day marker pins
+  - currently persisted in `UserDefaults` as JSON under its snapshot key
+- `PomodoroConfiguration` and `PomodoroSessionRecord`
+  - persisted timer durations, long-break cadence, and bounded session history
+
+Tracking algorithm and privacy
+- Foreground activity uses `NSWorkspace.shared.frontmostApplication` and activation notifications.
+- Background companion tracking prefers active audio output on macOS 15+ via CoreAudio process metadata, then falls back to known media app bundle identifiers.
+- Visible/background companion tracking uses `CGWindowListCopyWindowInfo` metadata only:
+  - owner PID, bounds, layer, alpha, onscreen state
+  - filters out small, transparent, hidden, system, launcher, VPN, password manager, and own-app windows
+  - requires recent activation and meaningful visible area before counting a visible companion app
+- The tracker does not capture screen pixels and does not store screenshots.
+- The tracker currently does not read window titles via Accessibility APIs.
+- Settings intentionally do not request Screen Recording or Accessibility permissions.
+- If future code adds window title capture or richer app introspection, add explicit Accessibility permission handling and update privacy copy first.
+
+Tracking state flow
+- `ProductivityApp` observes `tracking.isEnabled` and calls `AppEnvironment.reconcileTracking(isEnabled:)`.
+- `AppEnvironment` owns a single tracking task, cancels/stops cleanly, and persists on stop/termination.
+- `DashboardViewModel.startTracking` loads persisted data once, starts the tracker, merges live snapshots, saves live segments, and exposes `.tracking` or `.waitingForTrackedApp`.
+- Manual tracking mode is controlled by `AppLabelRuleStore`; tracker refreshes rule cache by revision.
+- The app’s own foreground bundle is allowed as a productive primary-attention target, while own-app companion/window tracking remains ignored.
+
+Persistence and local data
+- Activity segments and timeline label edits are stored in Application Support / `Productivity/ActivityStore.sqlite`.
+- SQLite WAL mode handles durable incremental writes; activity segments are upserted by stable `UUID`.
+- Startup performs a one-time import from legacy daily `.activitysegments` and `.timelinelabels` files when present, then marks migration complete in database metadata.
+- Date-range reads use indexed interval overlap checks (`start < interval.end && end > interval.start`) instead of loading day buckets.
+- Manual events, app label rules, custom activity labels, calendar board snapshot, Pomodoro config/history, and preferences are `UserDefaults` backed.
+- Settings local-data actions:
+  - Export CSV for inspection.
+  - Export Backup as lossless JSON snapshot.
+  - Restore Backup after confirmation.
+  - Clear Local Data removes activity history, timeline edits, manual events, rules, custom labels, calendar goals/pins, and Pomodoro history.
+
+Timeline and label algorithm invariants
+- Raw captured activity remains the source of truth for tracked usage.
+- Manual label edits are overlay segments over raw activity; they do not mutate raw tracked segments.
+- `TimelineLabelSegment.normalized(_:)` is the canonical cleanup algorithm:
+  - drops zero/negative duration labels
+  - sorts deterministic boundary events
+  - makes overlapping edited labels non-overlapping
+  - later overlapping labels win
+  - merges adjacent intervals with the same label/color/source
+- `DashboardViewModel.updateLabelSegments` clamps edits to today and normalizes before keeping or persisting them.
+- `FileBackedTimelineLabelRepository` normalizes replacements and splits them into day buckets.
+- Dashboard metric overlay normalizes labels and scans sorted raw segments/labels with a moving window.
+- Sleep and lifecycle segments are intentionally not overwritten by label overlay metrics.
+- Weekly/monthly/yearly insights normalize edited labels, subtract edited intervals from derived labels, then normalize the final union.
+
+Dashboard behavior
+- Today view uses responsive content width/padding from `ProductivityTheme`, with wider limits in fullscreen.
+- Daily quote header is controlled by `motivation.isDailyFocusHeaderEnabled`; custom quote lives in `motivation.customQuote`.
+- Top insight cards are Productive, Time Tracked, Goal Progress, and Current Momentum.
+- Current Momentum merges productive metric intervals and reports active/best stretch.
+- Secondary panels show current goal progress and milestones.
+- Recent Audit uses `ActivityStreamListView`; deleting an item removes it from live/persisted state and persists repository deletion.
+
+Insights and analytics
+- `DashboardViewModel` loads an insight interval spanning the current year plus the last 89 days for analytics coverage.
+- `insightSegments` are display segments; `insightMetricSegments` have label overlays applied and exclude sleep/lifecycle in downstream engines where needed.
+- Weekly Insights supports Week, Month, and Year periods, date stepping, reflection cards, average-day breakdowns, history grouping, and goal progress rollups.
+- Analytics uses `AdvancedAnalyticsEngine` snapshots with range selection, daily trend, hourly focus profile, label breakdown, top apps, focus streaks, context switching, and recovery lag.
+- `AnalyticsView` caches `AnalyticsSnapshot` in state and recomputes on initial load, selected range changes, or segment changes; chart style changes do not rerun the engine.
+
+Calendar board and goals
+- `EmojiCalendarView` is the Board route.
+- Users can step months, jump to today, select a day, and toggle quick/custom markers for that day.
+- Users can add/delete weekly or monthly goals with built-in or custom marker symbols.
+- Goal progress is based on pinned marker IDs inside the relevant current/week/month/year interval.
+- `GoalTodayPanel` appears on Today; `GoalInsightsPanel` appears inside Insights for the selected period.
+- Backup/restore includes calendar goals and pins.
+
+Pomodoro behavior
+- Timer config defaults: 25-minute focus, 5-minute short break, 15-minute long break, 4 focus sessions before long break.
+- Natural phase completion auto-continues to the next phase.
+- Focus completion records a `PomodoroSessionRecord` and starts the correct break.
+- Break completion starts the next focus session.
+- Long break selection requires at least one completed focus session and `completedFocusSessions.isMultiple(of: sessionsBeforeLongBreak)`.
+- Skip while running advances and continues running; skip while paused advances but remains paused.
+- Completion sound plays first, then the next phase start sound plays after a short delay.
+- Session history is bounded to 365 records and recent UI uses the newest 20.
+
+Pomodoro sounds
+- Sounds are procedural WAV tones generated locally by `PomodoroToneRenderer`.
+- No bundled/licensed audio assets are used.
+- `PomodoroSoundPlayer.play(_:)` creates `NSSound` from generated data and retains it briefly while playing.
+- Available sounds:
+  - Crystal Set: Prism, Aurora, Orbit, Cascade
+  - Clear Cue Set: Ignition, Drift, Gravity, Signal
+  - Utility: Silent
+- Default sound mapping:
+  - Focus start: Prism
+  - Short break start: Aurora
+  - Long break start: Orbit
+  - Timer finish: Cascade
+
+Settings state
+- General:
+  - appearance mode, theme, text size, launch at login, daily focus header, custom quote
+- Privacy:
+  - local-only copy, no screen recording/screenshots, CSV export, backup export/restore, clear data
+- Tracking:
+  - enable/disable tracking, event context overlay, hide sleep from day progress, timeline horizon, idle timeout, visible companion window duration, sampling cadence, restore recommended profile
+- Pomodoro:
+  - sound enable and per-event sound choices; timer duration controls stay on Pomodoro page
+- Labeling:
+  - all/manual tracking mode, custom labels, unknown app review, manual tracked app allowlist, installed app scan lazy-loads when labeling appears
+- Account:
+  - display name and Reset Local Profile; this only clears local display name and pauses tracking
+
+Backup compatibility
+- Current schema version is `ProductivityBackupSnapshot.currentSchemaVersion == 1`.
+- Backup includes preferences, activity segments, timeline label segments, manual events, app label rules, manual tracking rules, custom activity labels, calendar goals, calendar pins, Pomodoro configuration, and Pomodoro session history.
+- Preference decoding supplies defaults for older snapshots missing text size or per-event Pomodoro sounds.
+- Activity segment decoding derives fallback labels from category for older segment JSON.
+- Unknown extra JSON fields are ignored by Swift decoding.
+- Restore rejects snapshots with a schema version greater than the current version.
+
+Performance/resource choices already in code
+- Activity timeline and analytics operate on bounded intervals, not the full store for normal dashboard use.
+- File-backed repository queries only overlapping days plus previous day for midnight-spanning segments.
+- Recent audit selection is bounded instead of sorting/rendering the full history in the collapsed state.
+- Settings installed-app scan is lazy, detached, and utility-priority; helper types are `Sendable` where needed.
+- Analytics snapshot is cached in view state.
+- Timeline label overlay avoids broad quadratic behavior by normalizing labels and scanning sorted windows.
+- UI uses `ViewThatFits`, adaptive grids, responsive content width, text scaling, and fixed-format controls to avoid awkward resizing.
+
+Behavior constraints to preserve
+- Do not mutate raw captured activity when a user edits labels.
+- Do not let label edits overwrite sleep/lifecycle semantics in dashboard metrics.
+- Keep normalized label intervals non-overlapping.
+- Keep repository writes normalized so every reader can assume a stable label shape.
+- Avoid permission prompts unless the app actually uses the protected capability.
+- Keep privacy copy aligned with real implementation.
+- Preserve local-only assumptions unless a future explicit sync/account feature is designed.
+- Keep Pomodoro auto-transition predictable; manual skip/pause behavior should remain explicit.
+- Keep procedural sounds short and local; do not add copyrighted bundled audio.
+- When clearing/restoring data, coordinate tracking stop/resume and refresh `lifecycleRefreshID` so views reload.
+
+Files most likely to matter in future work
+- Dashboard/shell/window/menu bar:
+  - `Productivity/Productivity/ProductivityApp.swift`
+  - `Productivity/Productivity/Features/Dashboard/DashboardView.swift`
+  - `Productivity/Productivity/Features/Dashboard/DashboardViewModel.swift`
+  - `Productivity/Productivity/Features/Dashboard/SidebarView.swift`
+- Timeline correctness:
+  - `Productivity/Productivity/Core/Models/TimelineModels.swift`
+  - `Productivity/Productivity/Features/Timeline/TimelineEditorView.swift`
+  - `Productivity/Productivity/Core/Persistence/ActivityRepository.swift`
+  - `Productivity/Productivity/Features/Week/WeeklyInsightsView.swift`
+- Tracking/privacy:
+  - `Productivity/Productivity/Core/Services/ActivityTracking/MacOSActivityTracker.swift`
+  - `Productivity/Productivity/Features/Settings/SettingsView.swift`
+  - `Productivity/Productivity/App/Architecture.md`
+- Calendar/goals:
+  - `Productivity/Productivity/Features/Calendar/EmojiCalendarView.swift`
+  - `Productivity/Productivity/Features/Calendar/GoalSummaryViews.swift`
+  - `Productivity/Productivity/Features/Dashboard/MilestonesView.swift`
+- Pomodoro:
+  - `Productivity/Productivity/Features/Pomodoro/PomodoroViewModel.swift`
+  - `Productivity/Productivity/Features/Pomodoro/PomodoroView.swift`
+  - `Productivity/Productivity/App/AppSettings.swift`
+  - `Productivity/Productivity/ProductivityApp.swift`
+- Backup/settings:
+  - `Productivity/Productivity/Core/Utilities/ProductivityBackupDocument.swift`
+  - `Productivity/Productivity/App/AppEnvironment.swift`
+  - `Productivity/Productivity/App/AppSettings.swift`
+  - `Productivity/Productivity/Features/Settings/SettingsView.swift`
+- Performance/tests:
+  - `Productivity/Productivity/Core/Services/Insights/AdvancedAnalyticsEngine.swift`
+  - `Productivity/Productivity/Features/Insights/AnalyticsView.swift`
+  - `Productivity/ProductivityTests/ProductivityTests.swift`
+  - `Productivity/ProductivityTests/TimelineAlgorithmTests.swift`
+  - `Productivity/ProductivityTests/EdgeCaseTests.swift`
+
+Recent verification context
+- Existing tests use the Swift Testing framework.
+- Current tests cover classifier overrides, own-app focus classification, manual event recurrence/alerts, backup compatibility defaults, and analytics exclusion/overlap behavior.
+- Historical successful Xcode builds in the prior handoff included timeline/label normalization, resource optimization, Pomodoro auto-transition/sounds, settings/privacy cleanup, and activity timeline audit work.
+- This handoff refresh did not change app code.
+
+Recommended next checks before v1
+- Full Xcode build via `BuildProject` after any code edits.
+- Run test targets after behavior changes, especially timeline, backup, analytics, tracking, and Pomodoro changes.
+- Manual smoke test on a clean local data set:
+  - launch, close, reopen from dock/menu bar, and quit from menu bar
+  - enable/disable tracking and verify `.waitingForTrackedApp` vs `.tracking`
+  - track foreground, visible companion, and background audio cases
+  - verify no Screen Recording or Accessibility prompt appears during normal tracking
+  - edit overlapping timeline labels and check dashboard/week/month/year insights
+  - create Board goals, mark days, verify Today/Insights/Milestones update
+  - run Pomodoro through start/pause/reset/skip/focus completion/long break/sounds
+  - export CSV, export backup, restore backup, clear data, then confirm tracking resumes only when expected
+  - toggle text size, theme, appearance, daily quote, and launch-at-login controls
+
+If future chat is making changes
+- Read this file first, then inspect only the relevant files.
+- Preserve the architecture: `AppEnvironment` owns shared services and lifecycle coordination; view models own view state; repositories own persistence.
+- Prefer Swift concurrency and SwiftUI Observation; do not introduce Combine without a strong reason.
+- Prefer Xcode MCP diagnostics/build tools inside Xcode.
+- Use Apple documentation search for new/evolving SwiftUI, AppKit, ServiceManagement, Charts, CoreAudio, or permissions APIs.
+- Avoid unrelated refactors while stabilizing v1.
