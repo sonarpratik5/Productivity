@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="440" viewBox="0 0 1440 440" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">FocusGrove</title>
+  <desc id="desc">Make room for meaningful work. Native macOS, local first, thoughtfully focused. A dark crystal banner with cyan light and an abstract flowing path.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1440" y2="440" gradientUnits="userSpaceOnUse"><stop stop-color="#07121E"/><stop offset=".6" stop-color="#0B1728"/><stop offset="1" stop-color="#0B2634"/></linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1440" y2="440" gradientUnits="userSpaceOnUse"><stop stop-color="#A5F3FC" stop-opacity=".4"/><stop offset=".5" stop-color="#A5F3FC" stop-opacity=".06"/><stop offset="1" stop-color="#67E8F9" stop-opacity=".35"/></linearGradient>
+    <linearGradient id="path" x1="960" y1="110" x2="1350" y2="340" gradientUnits="userSpaceOnUse"><stop stop-color="#E0FAFF"/><stop offset=".45" stop-color="#67E8F9"/><stop offset="1" stop-color="#38BDF8" stop-opacity=".35"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#22D3EE" stop-opacity=".14"/><stop offset="1" stop-color="#22D3EE" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" stroke="#94DCEB" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect x="1" y="1" width="1438" height="438" rx="28" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1438" height="438" rx="28" fill="url(#grid)"/>
+  <ellipse cx="1150" cy="210" rx="390" ry="300" fill="url(#glow)"/>
+  <rect x="1" y="1" width="1438" height="438" rx="28" stroke="url(#edge)"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <rect x="60" y="44" width="33" height="33" rx="10" fill="#67E8F9" fill-opacity=".12" stroke="#A5F3FC" stroke-opacity=".2"/>
+    <path d="M69 54H81C85 54 85 61 81 61H72C68 61 68 68 72 68H81" stroke="#A5F3FC" stroke-width="3" stroke-linecap="round"/><circle cx="85" cy="68" r="1.8" fill="#67E8F9"/>
+    <text x="105" y="69" fill="#E1F7FF" font-size="25" font-weight="650" letter-spacing="-.6">FocusGrove</text>
+    <text x="60" y="172" fill="#F1FAFF" font-size="62" font-weight="700" letter-spacing="-2.2">Make room for</text>
+    <text x="60" y="245" fill="#A5F3FC" font-size="62" font-weight="700" letter-spacing="-2.2">meaningful work.</text>
+    <text x="63" y="294" fill="#A0B7CA" font-size="21" letter-spacing=".05">See your day clearly. Find your rhythm. Keep it yours.</text>
+    <g font-size="12" font-weight="600" letter-spacing="1.6" fill="#BAD6E3">
+      <circle cx="67" cy="366" r="3" fill="#67E8F9"/>
+      <text x="81" y="371">NATIVE macOS</text>
+      <circle cx="242" cy="366" r="2" fill="#486273"/>
+      <text x="260" y="371">LOCAL FIRST</text>
+      <circle cx="403" cy="366" r="2" fill="#486273"/>
+      <text x="421" y="371">THOUGHTFULLY FOCUSED</text>
+    </g>
+    <g transform="translate(940 88)">
+      <rect x="0" y="0" width="400" height="264" rx="24" fill="#B6F1FF" fill-opacity=".025" stroke="#BCF4FF" stroke-opacity=".13"/>
+      <rect x="18" y="18" width="364" height="228" rx="14" fill="#020B16" fill-opacity=".16" stroke="#BCF4FF" stroke-opacity=".055"/>
+      <path d="M54 64H282C332 64 332 132 282 132H118C68 132 68 200 118 200H288" stroke="#A5F3FC" stroke-opacity=".045" stroke-width="35" stroke-linecap="round"/>
+      <path d="M54 64H282C332 64 332 132 282 132H118C68 132 68 200 118 200H288" stroke="url(#path)" stroke-width="17" stroke-linecap="round"/>
+      <path d="M54 64H135" stroke="#E2FCFF" stroke-width="17" stroke-linecap="round"/>
+      <circle cx="333" cy="200" r="10" fill="#67E8F9"/>
+      <circle cx="333" cy="200" r="20" stroke="#67E8F9" stroke-opacity=".15"/>
+      <circle cx="333" cy="200" r="30" stroke="#67E8F9" stroke-opacity=".06"/>
+      <rect x="237" y="-17" width="143" height="34" rx="17" fill="#102734" stroke="#A5F3FC" stroke-opacity=".2"/>
+      <circle cx="255" cy="0" r="3" fill="#67E8F9"/>
+      <text x="268" y="4" fill="#BDECF6" font-size="10" font-weight="600" letter-spacing="1.5">CRYSTAL EDITION</text>
+    </g>
+  </g>
+</svg>
